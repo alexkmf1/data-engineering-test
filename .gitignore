@@ -1,3 +1,11 @@
 .env
 .pytest_cache
 __pycache__
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+terraform.tfvars
+crash.log

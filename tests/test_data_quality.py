@@ -3,9 +3,9 @@ import pytest
 
 from src.silver.data_quality import (
     remove_duplicates,
-    validate_unique,
     validate_not_null,
-    validate_timestamp_order
+    validate_timestamp_order,
+    validate_unique,
 )
 
 
