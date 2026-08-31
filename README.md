@@ -6,7 +6,7 @@ This repository contains my implementation of the FreightHero Data Engineer Tech
 The solution follows a Medallion-style architecture:
 
 ```text
-Source Files
+Sample Files (or Landing)
     ↓
 Bronze
     ↓
@@ -31,53 +31,6 @@ docs/system_design.md
 
 ---
 
-# 🚧 IN PROGRESS — MUST BE COMPLETED BEFORE SUBMISSION
-
-The following items are still being finalized:
-
-- 🚧 Final Gold data model
-- 🚧 Carrier Risk Score calculation
-- 🚧 Carrier Risk Score assumptions and formula documentation
-- 🚧 Save the final Gold dataset under `data/gold/`
-- 🚧 Replace the temporary PostgreSQL `carrier_risk` table
-- 🚧 Replace the temporary Metabase dashboard with the final dashboard
-- 🚧 Add final dashboard screenshots and configuration notes
-- 🚧 Add dashboard permissions and metadata-management notes
-- 🚧 Implement GitHub Actions CI
-- 🚧 Add Terraform / IaC
-- 🚧 Implement Docker Compose
-- 🚧 Add a single command to run Bronze → Silver → Gold
-- 🚧 Complete `docs/system_design.md`
-- 🚧 Prepare the stakeholder presentation
-- 🚧 Decide whether generated Bronze/Silver/Gold files will remain committed
-
-**This section must be removed or updated before final submission.**
-
----
-
-## Current Status
-
-| Component | Status |
-|---|---|
-| Bronze ingestion | ✅ Complete |
-| Silver transformation | ✅ Complete |
-| Runtime data-quality checks | ✅ Complete |
-| Pytest data-quality tests | ✅ Complete — 4 passing |
-| PostgreSQL connectivity | ✅ Complete |
-| PostgreSQL test load | ✅ Complete |
-| Metabase connectivity | ✅ Complete |
-| Temporary Metabase dashboard | ✅ Complete |
-| Gold joins | 🟡 Partially complete |
-| Final Gold model | 🚧 In progress |
-| Carrier Risk Score | 🚧 In progress |
-| Final dashboard | 🚧 In progress |
-| CI/CD | 🚧 Planned |
-| IaC / Terraform | 🚧 Planned |
-| Docker Compose | 🚧 Planned |
-| System design document | 🚧 In progress |
-
----
-
 ## Project Structure
 
 ```text
@@ -96,8 +49,17 @@ data-engineering-test/
 │
 ├── docs/
 │   └── system_design.md
+│   └── carrier_risk.drawio
 │
 ├── iac/
+│   └── glue_job.tf
+│   └── iam-policy.tf
+│   └── iam-role.tf
+│   └── locals.tf
+│   └── outputs.tf
+│   └── provider.tf
+│   └── scripts.tf
+│   └── variables.tf
 │
 ├── samples/
 │   ├── broker-samples.txt
@@ -107,7 +69,6 @@ data-engineering-test/
 ├── src/
 │   ├── bronze/
 │   │   ├── ingestion.ipynb
-│   │   └── ingestion_pyspark.ipynb
 │   │
 │   ├── silver/
 │   │   ├── data_quality.py
@@ -461,20 +422,6 @@ dashboard/
 
 ---
 
-## PySpark Alternative
-
-An alternative Bronze ingestion implementation is available at:
-
-```text
-src/bronze/ingestion_pyspark.ipynb
-```
-
-The local pipeline uses Pandas because the assessment dataset can be processed efficiently on a single machine.
-
-The PySpark version is included to demonstrate an alternative approach for workloads that would benefit from distributed processing.
-
----
-
 ## CI/CD
 
 # 🚧 NOT IMPLEMENTED YET
@@ -692,3 +639,5 @@ During the interview, you will walk through:
 - Handling schema drift
 - Cataloging and metadata strategy
 - Governance improvements
+
+````

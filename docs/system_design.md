@@ -1,4 +1,3 @@
-````markdown
 # System Design — Carrier Profile & Risk Score Pipeline
 
 ## 1. Purpose
@@ -10,7 +9,7 @@ The implementation is intentionally simple for the local assessment environment 
 The pipeline follows a Medallion architecture:
 
 ```text
-Sources
+Sample Files (Or Landing)
    ↓
 Bronze
    ↓
@@ -55,11 +54,7 @@ Metabase
 
 The local architecture was intentionally kept small because the assessment dataset can be processed efficiently on one machine.
 
-A PySpark ingestion alternative is also included to demonstrate how the processing approach could evolve for larger workloads.
-
 ### Production Direction
-
-The production design is intentionally cloud-agnostic because the target infrastructure was not specified.
 
 The same architecture could be implemented on AWS or GCP:
 
@@ -161,8 +156,6 @@ This avoids unnecessary distributed-processing complexity for the assessment.
 
 ### PySpark
 
-PySpark is included as an alternative implementation.
-
 For substantially larger datasets, PySpark could divide processing across multiple workers and improve scalability.
 
 The decision between Pandas and PySpark should therefore depend on data volume and infrastructure requirements rather than using distributed processing by default.
@@ -201,11 +194,11 @@ Carrier and broker datasets provide reference information that can enrich those 
 Conceptually:
 
 ```text
-communications
+communications (Fact Table)
      │
-     ├── carrier_company_id → carriers
+     ├── carrier_company_id → carriers (Dimension Table)
      │
-     └── broker_company_id  → brokers
+     └── broker_company_id  → brokers (Dimension Table)
 ```
 
 The Gold layer will transform these source-oriented structures into a business-oriented model.
@@ -228,7 +221,7 @@ The current local behavior is:
 Expected schema
       ↓
 Missing expected column
-→ Reject
+→ Reject and Error
 
 Additional source column
 → Detect and report
@@ -395,8 +388,11 @@ For example:
 If Databricks is available
 → Databricks Jobs can orchestrate the workloads
 
+If AWS is available
+→ AWS Glue Jobs can be orchestrated by AWS StepFunctions.
+
 If Databricks is not available
-→ another scheduler/orchestrator can be used
+→ another scheduler/orchestrator can be used like Airflow
 ```
 
 The architecture therefore does not depend on one specific orchestration tool.
@@ -566,46 +562,8 @@ No production row-volume assumptions are made because production volumes were no
 
 ## 16. System Diagram
 
-# 🚧 DRAW.IO DIAGRAM TO ADD BEFORE SUBMISSION
+The final diagram was created using Draw.io. It can be chanked in the file carrier_risk.drawio
 
-The final diagram will be created using Draw.io.
-
-It should show the main flow:
-
-```text
-             SOURCE SYSTEMS
-        CSV / JSON / TXT / Databases
-                    │
-                    ▼
-            Batch / CDC Ingestion
-                    │
-                    ▼
-                 BRONZE
-                    │
-                    ▼
-                 SILVER
-                    │
-                    ▼
-                  GOLD
-                    │
-                    ▼
-               PostgreSQL
-                    │
-                    ▼
-                Metabase
-```
-
-The production version of the diagram can also show:
-
-```text
-Cloud Object Storage
-PySpark Processing
-Alerting
-Terraform
-dev / int / prod
-```
-
-without tying the architecture to AWS or GCP.
 
 ---
 
@@ -622,8 +580,8 @@ The assessment implementation and production design intentionally differ in comp
 | Orchestration | Manual notebooks | Platform-dependent scheduler |
 | Database | PostgreSQL | PostgreSQL unless requirements change |
 | BI | Metabase | Metabase |
-| IaC | 🚧 Planned | Terraform |
-| Alerting | Not implemented locally | Email / incident-management integration |
+| IaC | Not used | Terraform |
+| Alerting | Print Messages | Email / incident-management integration |
 | Environments | Local | dev / int / prod |
 
 This separation keeps the assessment implementation simple while showing how the architecture could evolve without pretending that production infrastructure has already been implemented.
@@ -638,12 +596,8 @@ The following items are intentionally not complete yet:
 - 🚧 Carrier Risk Score formula
 - 🚧 Final dashboard
 - 🚧 Gold persistence under `data/gold/`
-- 🚧 CI/CD
-- 🚧 Terraform implementation
 - 🚧 Docker Compose
-- 🚧 Draw.io architecture diagram
 - 🚧 Production CDC implementation
 - 🚧 Production alerting integration
 
 These items will be updated before final submission where required by the assessment.
-````
