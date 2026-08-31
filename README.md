@@ -1,29 +1,28 @@
-````markdown
-# FreightHero Carrier Profile & Risk Score Pipeline
+# FreightHero Carrier Profile
 
 This repository contains my implementation of the FreightHero Data Engineer Technical Assessment.
 
-The solution follows a Medallion-style architecture:
+The project builds an end-to-end data pipeline that transforms the provided carrier, broker, and communication datasets into a business-ready Gold dataset for carrier responsiveness and risk analysis.
+
+The local pipeline follows a Medallion-style architecture:
 
 ```text
-Sample Files (or Landing)
-    ↓
-Bronze
-    ↓
-Silver
-    ↓
-Gold
-    ↓
-PostgreSQL
-    ↓
-Metabase
+CSV / JSON / TXT
+        ↓
+      Bronze
+        ↓
+      Silver
+        ↓
+       Gold
+        ↓
+   PostgreSQL
+        ↓
+     Metabase
 ```
 
-The local implementation uses Pandas and Parquet for data processing, PostgreSQL as the SQL serving layer, and Metabase for BI visualization.
+The local implementation uses Pandas and Parquet for data processing, PostgreSQL as the SQL serving layer, and Metabase for visualization.
 
-A PySpark ingestion implementation is also included as an alternative approach for larger-scale distributed processing.
-
-For detailed architecture decisions, schema evolution, CDC, governance, IaC, scaling, and production considerations, see:
+A representative AWS production architecture using S3, AWS Glue, IAM, and Terraform is documented separately in:
 
 ```text
 docs/system_design.md
@@ -44,21 +43,33 @@ data-engineering-test/
 │
 ├── data/
 │   ├── bronze/
+│   │   ├── brokers/
+│   │   ├── carriers/
+│   │   └── communications/
+│   │
 │   ├── silver/
+│   │   ├── brokers/
+│   │   ├── carriers/
+│   │   └── communications/
+│   │
 │   └── gold/
+│       └── carrier_risk/
 │
 ├── docs/
+│   ├── carrier_risk.drawio
 │   └── system_design.md
-│   └── carrier_risk.drawio
 │
 ├── iac/
-│   └── glue_job.tf
-│   └── iam-policy.tf
-│   └── iam-role.tf
-│   └── locals.tf
-│   └── outputs.tf
-│   └── provider.tf
-│   └── scripts.tf
+│   ├── dev.tfvars
+│   ├── int.tfvars
+│   ├── prd.tfvars
+│   ├── glue-job.tf
+│   ├── iam-policy.tf
+│   ├── iam-role.tf
+│   ├── locals.tf
+│   ├── outputs.tf
+│   ├── provider.tf
+│   ├── scripts.tf
 │   └── variables.tf
 │
 ├── samples/
@@ -68,7 +79,7 @@ data-engineering-test/
 │
 ├── src/
 │   ├── bronze/
-│   │   ├── ingestion.ipynb
+│   │   └── ingestion.ipynb
 │   │
 │   ├── silver/
 │   │   ├── data_quality.py
@@ -80,26 +91,25 @@ data-engineering-test/
 ├── tests/
 │   └── test_data_quality.py
 │
-├── .env
 ├── .env.example
 ├── .gitignore
 ├── README.md
 └── requirements.txt
 ```
 
-> `.env` contains local credentials and must not be committed.
+Generated Bronze, Silver, and Gold Parquet datasets are intentionally included in the repository so that the resulting data can also be reviewed without executing the pipeline.
 
 ---
 
 ## Source Data
 
-The assessment provides three input datasets:
+The assessment provides three source datasets:
 
 | Dataset | Format |
 |---|---|
 | `communication-samples.csv` | CSV |
 | `carrier-samples.json` | JSON |
-| `broker-samples.txt` | Tab-separated text |
+| `broker-samples.txt` | Tab-separated TXT |
 
 ---
 
@@ -113,22 +123,13 @@ Notebook:
 src/bronze/ingestion.ipynb
 ```
 
-The Bronze pipeline:
+Bronze ingests the source files, validates the expected source structure, adds ingestion metadata, and writes the datasets as Parquet.
 
-- Reads CSV, JSON, and TXT sources
-- Validates expected source columns
-- Preserves source column names
-- Adds `_source_file`
-- Adds `_ingested_at`
-- Writes Parquet files to `data/bronze/`
-
-Current output pattern:
+Output:
 
 ```text
 data/bronze/<dataset>/data.parquet
 ```
-
-An example of timestamp-based ingestion versioning is kept in the notebook as a production consideration but is intentionally not enabled in the local implementation.
 
 ---
 
@@ -140,28 +141,18 @@ Notebook:
 src/silver/transformation.ipynb
 ```
 
-Reusable data-quality functions:
+Silver creates the canonical datasets by standardizing columns, casting data types, normalizing timestamps, removing deterministic duplicates, and executing data-quality checks.
+
+Reusable validation functions are located in:
 
 ```text
 src/silver/data_quality.py
 ```
 
-The Silver pipeline:
-
-- Standardizes column names
-- Casts data types
-- Parses timestamps as UTC
-- Removes deterministic duplicate business records
-- Runs data-quality validations
-- Adds `_transformed_at`
-- Writes Parquet files to `data/silver/`
-
-Example source correction:
+Output:
 
 ```text
-broker_comany_id
-→
-broker_company_id
+data/silver/<dataset>/data.parquet
 ```
 
 ---
@@ -174,110 +165,78 @@ Notebook:
 src/gold/build.ipynb
 ```
 
-The current Gold implementation joins:
+The Gold layer combines communications with carrier and broker information and creates response cycles used to analyze carrier responsiveness.
+
+The model considers:
 
 ```text
-communications
-+ carriers
-+ brokers
+Outbound:
+direction = outbound
+status = delivered
+contact type = driver or dispatcher
+
+Inbound:
+direction = inbound
+status = received
+contact type = driver or dispatcher
 ```
 
-and removes technical metadata from the business-facing output.
-
-# 🚧 GOLD MODEL IN PROGRESS
-
-The final Gold model still needs to define:
-
-- Final analytical grain
-- Carrier performance metrics
-- Responsiveness metrics
-- Carrier Risk Score
-- Risk classification
-- Final Gold table or tables
-
-The current Gold output is temporary and is being used to validate the PostgreSQL and Metabase integration.
-
----
-
-## Data Quality
-
-Runtime data-quality functions are located in:
+Communication events are organized into conversation cycles using:
 
 ```text
-src/silver/data_quality.py
+external_id
+carrier_name
+broker_name
+channel
+contact_type
 ```
 
-Current checks include:
-
-- Duplicate removal
-- Uniqueness validation
-- Not-null validation
-- Timestamp-order validation
-
-Runtime validation checks the actual pipeline data.
-
-Pytest is used separately to verify that the validation functions behave correctly.
-
----
-
-## Automated Tests
-
-Tests:
+The final Gold dataset contains:
 
 ```text
-tests/test_data_quality.py
+external_id
+carrier_name
+broker_name
+channel
+contact_type
+cycle_id
+first_outbound_at
+last_outbound_at
+response_at
+outbound_attempts
+responsed
+response_time
 ```
 
-Current tests:
+`response_time` is calculated in minutes between the first outbound communication in the cycle and the corresponding inbound response.
+
+Gold is persisted both as Parquet and in PostgreSQL.
+
+Parquet output:
 
 ```text
-test_remove_duplicates
-test_validate_unique
-test_validate_not_null
-test_validate_timestamp_order
+data/gold/carrier_risk/data.parquet
 ```
 
-Run:
-
-```bash
-python -m pytest tests/test_data_quality.py -v
-```
-
-Current result:
+PostgreSQL output:
 
 ```text
-4 passed
+public.carrier_risk
 ```
 
 ---
 
-## Requirements
+## Setup
 
-Current Python version:
+### Python
+
+The project was developed using:
 
 ```text
 Python 3.14.2
 ```
 
-Python dependencies:
-
-```text
-pyspark==4.2.0
-pandas==3.0.5
-pyarrow==25.0.1
-pytest==9.1.1
-SQLAlchemy==2.0.52
-psycopg==3.3.4
-python-dotenv==1.2.3
-```
-
-Install them with:
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-A Python virtual environment is recommended:
+Create a virtual environment:
 
 ```bash
 python -m venv .venv
@@ -289,38 +248,36 @@ Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
 ```
 
-Then:
+Install the dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
----
-
-## Local Software Versions
-
-The implementation was developed and tested with:
+Current dependencies are defined in:
 
 ```text
-Python: 3.14.2
-Java: Temurin OpenJDK 25.0.4.1 LTS
+requirements.txt
+```
+
+---
+
+## PostgreSQL Configuration
+
+The local implementation uses PostgreSQL as the serving database.
+
+Tested configuration:
+
+```text
 PostgreSQL: 18.6
-Metabase: v0.63.15.5
+
+Host: localhost
+Port: 5432
+Database: freighthero
+Schema: public
 ```
 
-Metabase build:
-
-```text
-Version: v0.63.15.5
-Built: 2026-08-28
-Hash: a1b5b62
-```
-
----
-
-## Environment Variables
-
-Create a `.env` file at the repository root using `.env.example` as a template:
+Create a `.env` file in the repository root using `.env.example`:
 
 ```text
 POSTGRES_HOST=localhost
@@ -330,17 +287,13 @@ POSTGRES_USER=postgres
 POSTGRES_PASSWORD=your_password
 ```
 
-Never commit the real `.env` file.
+The real `.env` file must not be committed.
 
 ---
 
 ## Running the Pipeline
 
-### Current Method
-
-The pipeline is currently executed through VS Code / Jupyter.
-
-Run the notebooks in this order:
+The notebooks should currently be executed in the following order:
 
 ```text
 1. src/bronze/ingestion.ipynb
@@ -348,73 +301,159 @@ Run the notebooks in this order:
 3. src/gold/build.ipynb
 ```
 
-Use **Run All** for each notebook before moving to the next layer.
+Run each notebook completely before executing the next layer.
 
-Then run:
+The resulting flow is:
+
+```text
+Samples
+   ↓
+Bronze Parquet
+   ↓
+Silver Parquet
+   ↓
+Gold Parquet
+   ↓
+PostgreSQL
+```
+
+A future improvement would be to add a single orchestration entry point so the complete pipeline can be executed with one command.
+
+---
+
+## Data Quality and Tests
+
+Runtime data-quality checks are implemented in:
+
+```text
+src/silver/data_quality.py
+```
+
+Current checks include:
+
+```text
+Duplicate removal
+Uniqueness validation
+Not-null validation
+Timestamp-order validation
+```
+
+Automated tests are implemented in:
+
+```text
+tests/test_data_quality.py
+```
+
+Run them with:
 
 ```bash
 python -m pytest tests/test_data_quality.py -v
 ```
 
-# 🚧 PLANNED
+Current test suite:
 
-Before submission, a single orchestration entry point will be added so the entire pipeline can be executed with one command.
+```text
+test_remove_duplicates
+test_validate_unique
+test_validate_not_null
+test_validate_timestamp_order
+```
+
+Current result:
+
+```text
+4 passed
+```
 
 ---
 
-## PostgreSQL
+## Linting
 
-Local PostgreSQL configuration:
+Ruff is used for Python linting.
 
-```text
-Host: localhost
-Port: 5432
-Database: freighthero
-Schema: public
-Version: 18.6
+Run:
+
+```bash
+python -m ruff check src tests
 ```
 
-The Gold notebook connects using SQLAlchemy and Psycopg.
+---
 
-# 🚧 TEMPORARY TABLE
+## Continuous Integration
 
-The current implementation writes a temporary table:
+GitHub Actions configuration:
+
+```text
+.github/workflows/ci.yml
+```
+
+The CI workflow runs on pushes and pull requests and performs:
+
+```text
+Install dependencies
+        ↓
+Ruff linting
+        ↓
+Pytest
+        ↓
+Pass / Fail
+```
+
+The workflow validates the code and automated tests before changes are integrated.
+
+Runtime data-quality validation remains part of the pipeline itself.
+
+---
+
+## Infrastructure as Code
+
+Representative Terraform configuration is available under:
+
+```text
+iac/
+```
+
+The Terraform files demonstrate how the production infrastructure could be organized using AWS services such as Glue and IAM, together with environment-specific configuration.
+
+The IaC is included as a design and organization example for the assessment.
+
+It has not been applied to an AWS account as part of the local implementation.
+
+Detailed infrastructure decisions are documented in:
+
+```text
+docs/system_design.md
+```
+
+---
+
+## Architecture Diagram
+
+The production-oriented architecture diagram is available in Draw.io format:
+
+```text
+docs/carrier_risk.drawio
+```
+
+The diagram represents the proposed flow from external data sources through Landing, Bronze, Silver, Gold, PostgreSQL, and Metabase, together with the AWS processing and infrastructure components.
+
+---
+
+## Dashboard
+
+Metabase is used as the BI layer and connects to the final PostgreSQL Gold table:
 
 ```text
 public.carrier_risk
 ```
 
-using a limited example dataset.
-
-This table will be replaced once the final Carrier Risk Score model is complete.
-
----
-
-## Metabase
-
-Current Metabase version:
+Tested local version:
 
 ```text
-v0.63.15.5
+Metabase v0.63.15.5
 ```
 
-Metabase connects to:
-
-```text
-PostgreSQL
-Host: localhost
-Port: 5432
-Database: freighthero
-Schema: public
-```
-
-A temporary dashboard has already been created to validate the connection.
-
-# 🚧 FINAL DASHBOARD IN PROGRESS
-
-The final dashboard will be created after the Gold model and Carrier Risk Score are finalized.
-
-The final submission will include dashboard screenshots and configuration notes under:
+The final dashboard and screenshots are still being completed and will be stored under:
 
 ```text
 dashboard/
@@ -422,222 +461,40 @@ dashboard/
 
 ---
 
-## CI/CD
-
-# 🚧 NOT IMPLEMENTED YET
-
-The planned GitHub Actions workflow is:
-
-```text
-.github/workflows/ci.yml
-```
-
-It will execute tasks such as:
-
-```text
-Install dependencies
-Run linting
-Run Pytest
-```
-
-CI will validate the code and automated tests.
-
-Runtime validation of incoming data remains part of the pipeline.
-
----
-
-## Infrastructure as Code
-
-# 🚧 NOT IMPLEMENTED YET
-
-Terraform will be added under:
-
-```text
-iac/
-```
-
-The detailed IaC approach is documented in:
-
-```text
-docs/system_design.md
-```
-
----
-
-## Docker
-
-# 🚧 PLANNED — NOT IMPLEMENTED YET
-
-Docker Compose is planned for the final submission to make the environment easier to reproduce.
-
-The intended containerized environment will include:
-
-```text
-Python pipeline
-PostgreSQL
-Metabase
-```
-
-Target versions:
-
-```text
-Python: 3.14.2
-PostgreSQL: 18.6
-Metabase: v0.63.15.5
-```
-
-The repository will contain Docker configuration rather than installers or application binaries.
-
-Files such as the following should not be committed:
-
-```text
-Java installer
-PostgreSQL installer
-metabase.jar
-PostgreSQL data directory
-Metabase internal application database
-```
-
----
-
-## Generated Data
-
-Current generated datasets are stored under:
-
-```text
-data/
-├── bronze/
-├── silver/
-└── gold/
-```
-
-# 🚧 FINAL SUBMISSION DECISION REQUIRED
-
-A final decision will be made on whether the generated Bronze, Silver, and Gold outputs should remain committed to make evaluation easier, or whether they should be regenerated by running the pipeline.
-
----
-
 ## System Design
 
-Detailed technical design is documented separately:
+Detailed architecture and engineering decisions are intentionally kept outside this README.
+
+See:
 
 ```text
 docs/system_design.md
 ```
 
-That document covers:
+The system design document covers topics such as:
 
-- Architecture decisions
+- Local and production architecture
 - Data modeling
-- Schema evolution
-- CDC considerations
-- Governance
-- Failure handling
+- Schema management and schema evolution
+- Data quality and failure handling
+- CDC and incremental processing
+- Governance and metadata
 - Infrastructure as Code
-- Production considerations
+- Security and access
 - Scaling
-- Observability
-- System diagram
+- Production monitoring
+- Environment strategy
 
-This README intentionally keeps those topics brief to avoid duplicating the system design document.
+This README focuses primarily on how to understand, install, run, and validate the project.
 
 ---
 
+## Future Improvements
 
-# Original FreightHero Assessment
+The following improvements can be added beyond the current implementation:
 
-The original FreightHero assessment README should remain below this line unchanged.
+- Docker Compose for the pipeline, PostgreSQL, and Metabase
+- Single-command pipeline orchestration
+- Production deployment and validation of the Terraform infrastructure
 
-# Data Engineer – Technical Assessment
-
-## Candidate Instructions
-
-This assessment evaluates your ability to design, document, and implement a small end‑to‑end data pipeline while demonstrating strong communication skills and ownership. The role requires hands-on infrastructure work, clear stakeholder interaction, and adherence to best practices such as Infrastructure as Code (IaC), documentation, and data quality standards.
-
-## 1. Assessment Case: Carrier Profile & Risk Score Pipeline
-
-You will design and implement a pipeline that produces a Carrier Risk Score using anonymized internal datasets. Inputs may include multiple formats:
-
-- CSV
-- JSON
-- Parquet
-- Semi‑structured logs
-
-These datasets contain metrics such as responsiveness. Your goal is to unify these sources, model the data, compute the score, and expose it for BI consumption.
-
-## 2. Deliverables
-
-### 2.1 System Design Document
-
-Provide a concise technical document including:
-
-- End‑to‑end pipeline architecture (extraction → transformation → loading)
-- Tooling decisions with justification
-- Infrastructure provisioning approach using IaC principles
-- Data modeling strategy, including schema design and handling of schema evolution
-- CDC (Change Data Capture) considerations for SQL and NoSQL
-- Governance elements: naming conventions, data quality tests, metadata lifecycle
-- A system diagram (Mermaid, Draw.io, or equivalent)
-
-### 2.2 Pipeline Implementation (Local or Docker)
-
-Implement a minimal working pipeline that:
-
-- Extracts data from the provided files
-- Transforms and unifies the data
-- Loads results into a local SQL database (SQLite or Postgres)
-- Computes the Carrier Risk Score
-- Makes the final dataset available for BI tools
-
-#### Requirements
-
-- Git‑based version control
-- CI/CD workflow (linting + tests)
-- Documentation on how to run the pipeline locally
-- At least three data quality tests
-
-#### Optional (but valued)
-
-- Docker Compose
-- IaC snippet for provisioning local infra
-- CDC simulation (incremental updates)
-
-### 2.3 BI / Dashboard
-
-Create a simple dashboard using Metabase/Similar (or outline the configuration if not installing):
-
-- 2–3 charts showing carrier performance
-- Explanation of permissions and metadata management
-- Notes on plugin or connection setup if applicable
-
-### 2.4 Stakeholder Presentation
-
-Prepare a 5–7 minute explanation targeted at non‑technical stakeholders covering:
-
-- What the pipeline does
-- Why the chosen tools matter
-- How the Risk Score supports operations
-- Limitations and future improvements
-
-## 3. Submission Package
-
-Submit the following:
-
-- `/docs/system_design.md`
-- `/src/` pipeline code
-- `/iac/` IaC snippet or outline
-- `/tests/` data quality tests
-- `dashboard` screenshots, public URLs or configuration notes
-- `README.md` with setup instructions
-
-## 4. Interview Deep Dive
-
-During the interview, you will walk through:
-
-- Architecture decisions
-- Scaling considerations
-- Handling schema drift
-- Cataloging and metadata strategy
-- Governance improvements
-
-````
+---
