@@ -9,6 +9,14 @@ This folder contains the exported Metabase dashboard for the FreightHero Carrier
 
 ![Carrier Responsiveness Risk dashboard](./carrier-responsiveness-risk-dashboard.png)
 
+The configured local Metabase public dashboard URL is:
+
+```text
+http://localhost:3000/public/dashboard/52693696-a936-4b0d-bfd6-bbf034a2a45d
+```
+
+Because this URL uses `localhost`, it works only on the machine running the configured Metabase instance. The exported PDF is the portable dashboard evidence.
+
 ## Data Source
 
 Metabase reads the final Gold table:
@@ -135,7 +143,8 @@ SELECT
 FROM scored_carriers
 ORDER BY
     risk_score DESC,
-    total_records DESC;
+    total_records DESC
+LIMIT 20;
 ```
 
 ### Risk Score definition
@@ -151,6 +160,7 @@ Risk Score = 100 × (
 - Higher response times receive higher delay risk.
 - Carriers with no responses receive the maximum score of `100`.
 - Only carriers with at least 10 response-cycle records within the selected channel are included.
+- The score and `PERCENT_RANK()` use all eligible carriers; `LIMIT 20` is applied only in the final result to display the 20 highest-risk carriers.
 - The 50/50 weighting, minimum sample, and risk-level thresholds are analytical assumptions pending stakeholder approval.
 
 ### Chart configuration
@@ -159,6 +169,7 @@ Risk Score = 100 × (
 - Category/X-axis: `carrier_name`
 - Value/Y-axis: `risk_score`
 - Sort: `risk_score` descending
+- Displayed rows: top 20 highest-risk carriers
 - Axis range: 0 to 100
 - Data labels: enabled
 - Suggested colors: orange for the Risk Score
@@ -244,9 +255,9 @@ Configure it as follows:
 4. Save the question.
 5. Add one dashboard-level filter named **Channel**.
 6. Use a Text/Category filter and connect it to the `channel` variable on all three cards.
-7. Set `email` as the current dashboard value.
+7. Select `email`, `sms`, or `chat` when a channel-specific view is required; leave it empty to use all supported channels.
 
-The current Gold result is effectively email-only because its outbound rule requires `status = delivered`. SMS primarily uses `sent`, and chat requires separate status/contact rules. SMS and chat should only be exposed after those business rules are implemented and validated.
+Gold uses channel-specific outbound rules: `delivered` for email, `sent` or `delivered` for SMS, and `sent` for chat. An outbound SMS event with `status = received` is excluded because it is a provider event, not a carrier response. Chat is measured at the carrier/channel level because its contact fields do not identify an individual driver or dispatcher.
 
 ## Permissions and Metadata
 

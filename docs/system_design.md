@@ -262,24 +262,23 @@ The Gold model focuses on communication between FreightHero/broker-side users an
 An outbound event is considered when:
 
 ```text
-direction = outbound
-status = delivered
-to_contact_type = driver or dispatcher
+email: direction = outbound, status = delivered, to_contact_type = driver or dispatcher
+sms: direction = outbound, status = sent or delivered, to_contact_type = driver or dispatcher
+chat: direction = outbound, status = sent, to_contact_type = channel
 ```
 
-The destination contact becomes the analytical `contact_type`.
+For email and SMS, the destination contact becomes the analytical `contact_type`. For chat, the analytical `contact_type` is `channel`.
 
 ### Relevant Inbound Events
 
 An inbound event is considered when:
 
 ```text
-direction = inbound
-status = received
-from_contact_type = driver or dispatcher
+email or sms: direction = inbound, status = received, from_contact_type = driver or dispatcher
+chat: direction = inbound, status = received, from_contact_type = other, to_contact_type = channel
 ```
 
-The source contact becomes the analytical `contact_type`.
+For email and SMS, the source contact becomes the analytical `contact_type`. Chat inbound events are normalized to `contact_type = channel` so that they match chat outbound events.
 
 ### Response-Matching Group
 
@@ -351,7 +350,7 @@ The current Gold dataset contains:
 | `carrier_name` | Carrier associated with the communication |
 | `broker_name` | Broker associated with the communication |
 | `channel` | Communication channel |
-| `contact_type` | Carrier contact type, such as driver or dispatcher |
+| `contact_type` | Carrier contact type (`driver` or `dispatcher`), or `channel` for chat |
 | `cycle_id` | Response cycle within the conversation |
 | `first_outbound_at` | First outbound attempt in the cycle |
 | `last_outbound_at` | Most recent outbound attempt in the cycle |
@@ -374,16 +373,17 @@ Confirmed for the current assessment:
 - `direction = inbound` means FreightHero received the communication.
 - Responses remain within the same `channel`; cross-channel response matching is not required today.
 - `thread_id` represents a thread within the broader communication history.
+- `status` is channel/provider-specific: email uses `delivered`, SMS uses `sent` or `delivered`, and chat uses `sent` as its final outbound state.
+- An outbound SMS event with `status = received` is a provider event received by the platform and is not treated as a carrier response.
 
 The remaining rules that require business validation are:
 
 - Whether `thread_id` must always participate in response matching and how null thread identifiers should behave.
 - Whether a driver can answer a message sent to a dispatcher, or vice versa.
 - Whether `created_at` or another event timestamp should be used for the response-time clock.
-- Which outbound statuses count as valid attempts for SMS and chat.
 - Whether equal score weights and the minimum of 10 records should become formal business rules.
 
-The current Gold implementation produces response-cycle metrics used for carrier risk analysis. Because the implemented outbound rule requires `status = delivered`, the current Gold output is effectively email-only. SMS primarily uses `sent`, and chat requires additional status/contact rules before those channels can be treated as supported.
+The current Gold implementation supports email, SMS, and chat using the channel-specific rules above. Chat measures responsiveness at the carrier/channel level because its contact fields do not identify an individual driver or dispatcher. For SMS providers without delivery receipts, `sent` is the best available successful outbound state and does not prove recipient delivery.
 
 ### Carrier Responsiveness Risk Score
 
@@ -407,7 +407,7 @@ Risk Score = 100 × (
 
 Average response time uses answered cycles only and is displayed in hours. If a carrier has no responses, its Risk Score is set to `100`, representing maximum communication-responsiveness risk.
 
-The score is explainable but relative: `PERCENT_RANK()` depends on the eligible carrier population and selected channel. The 50/50 weighting, the minimum sample of 10 records, and the risk-level thresholds are analytical assumptions pending stakeholder approval. The result measures communication responsiveness only; it does not represent carrier safety, financial, fraud, or delivery risk.
+The score is explainable but relative: `PERCENT_RANK()` depends on the eligible carrier population and selected channel. It is calculated across all eligible carriers before the final query orders the result and displays the 20 highest-risk carriers with `LIMIT 20`. The 50/50 weighting, the minimum sample of 10 records, and the risk-level thresholds are analytical assumptions pending stakeholder approval. The result measures communication responsiveness only; it does not represent carrier safety, financial, fraud, or delivery risk.
 
 ---
 
@@ -583,6 +583,8 @@ public.carrier_risk
 ```
 
 The final dashboard contains three cards: Carrier Responsiveness Risk Score, Response Rate by Carrier, and Average Response Time by Carrier. It includes a shared `channel` filter and is exported under `dashboard/` together with its SQL and configuration documentation.
+
+The configured local public dashboard endpoint is `http://localhost:3000/public/dashboard/52693696-a936-4b0d-bfd6-bbf034a2a45d`. Because it uses `localhost`, it is available only on the machine running the configured Metabase instance; the exported PDF is the portable dashboard artifact.
 
 ### PySpark / AWS Glue
 
@@ -1035,7 +1037,7 @@ The main remaining improvements are:
 - Apply and validate Terraform against a real AWS environment if production deployment is required
 - Add production monitoring and alert integrations
 - Add CDC when operational database sources become available
-- Resolve `thread_id`, cross-contact response, SMS, and chat business rules with stakeholders
+- Resolve `thread_id` and cross-contact response rules with stakeholders
 - Validate the score weights, minimum sample size, and risk-level thresholds with stakeholders
 
 The current solution intentionally distinguishes between what has actually been implemented locally and what is proposed as a production design.
