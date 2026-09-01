@@ -328,7 +328,13 @@ data-engineering-test/
 │   └── carrier-responsiveness-risk-dashboard.png
 ├── data/
 │   ├── bronze/
+│   │   ├── brokers/
+│   │   ├── carriers/
+│   │   └── communications/
 │   ├── silver/
+│   │   ├── brokers/
+│   │   ├── carriers/
+│   │   └── communications/
 │   └── gold/
 │       └── carrier_risk/
 ├── docs/
@@ -590,7 +596,7 @@ HAVING COUNT(*) >= 10
 ORDER BY response_rate_percent ASC;
 ```
 
-Recommended visualization: horizontal bar chart, `carrier_name` as the category, `response_rate_percent` as the value, and `%` as the suffix.
+Visualization: bar chart, `carrier_name` as the category and `response_rate_percent` as the value.
 
 ### Slowest Average Response Time by Carrier
 
@@ -616,11 +622,11 @@ HAVING COUNT(*) >= 10
 ORDER BY avg_response_time_hours DESC;
 ```
 
-Recommended visualization: bar chart, `carrier_name` as the category, `avg_response_time_hours` as the value, and `hours` as the unit.
+Visualization: bar chart, `carrier_name` as the category, `avg_response_time_hours` as the value, and `hours` as the unit.
 
 The optional `channel` parameter is configured as a Metabase Text variable and mapped to one dashboard-level channel filter. The minimum of 10 records reduces unstable conclusions based on very small samples; it is an analytical threshold, not a confirmed business rule.
 
-The current Gold result is effectively email-only because the implemented outbound rule requires `status = delivered`. SMS primarily uses `sent`, and chat requires additional contact/status rules. Those channels should not be presented as fully supported until their business rules are implemented and validated.
+The current Gold result is effectively email-only because the implemented outbound rule requires `status = delivered`. SMS and chat primarily uses `sent`, those channels should not be presented as fully supported until their business rules are implemented and validated.
 
 Metabase v0.63.15.5 is pinned in `docker-compose.yml`.
 

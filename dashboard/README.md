@@ -4,7 +4,7 @@ This folder contains the exported Metabase dashboard for the FreightHero Carrier
 
 ## Dashboard Files
 
-- `Metabase - Carrier Responsiveness Risk.pdf` - exported dashboard
+- `Metabase - Carrier Responsiveness Risk.pdf` - dashboard screenshot
 - `carrier-responsiveness-risk-dashboard.png` - dashboard screenshot
 
 ![Carrier Responsiveness Risk dashboard](./carrier-responsiveness-risk-dashboard.png)
