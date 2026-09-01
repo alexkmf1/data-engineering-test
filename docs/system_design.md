@@ -362,7 +362,7 @@ The current Gold dataset contains:
 
 ### Business Assumptions
 
-The source files do not provide a complete business data dictionary. Stakeholder clarification resolved some semantics, while other implementation choices remain analytical assumptions.
+Stakeholder clarification resolved some semantics, while other implementation choices remain analytical assumptions.
 
 Therefore, the response logic is based on explicit assumptions documented in the implementation.
 
@@ -382,8 +382,6 @@ The remaining rules that require business validation are:
 - Whether `created_at` or another event timestamp should be used for the response-time clock.
 - Which outbound statuses count as valid attempts for SMS and chat.
 - Whether equal score weights and the minimum of 10 records should become formal business rules.
-
-Documenting these assumptions avoids silently embedding uncertain business rules into the analytical model.
 
 The current Gold implementation produces response-cycle metrics used for carrier risk analysis. Because the implemented outbound rule requires `status = delivered`, the current Gold output is effectively email-only. SMS primarily uses `sent`, and chat requires additional status/contact rules before those channels can be treated as supported.
 
@@ -408,14 +406,6 @@ Risk Score = 100 × (
 ```
 
 Average response time uses answered cycles only and is displayed in hours. If a carrier has no responses, its Risk Score is set to `100`, representing maximum communication-responsiveness risk.
-
-The final score is classified for presentation purposes as:
-
-```text
-High   >= 66.67
-Medium >= 33.33 and < 66.67
-Low    < 33.33
-```
 
 The score is explainable but relative: `PERCENT_RANK()` depends on the eligible carrier population and selected channel. The 50/50 weighting, the minimum sample of 10 records, and the risk-level thresholds are analytical assumptions pending stakeholder approval. The result measures communication responsiveness only; it does not represent carrier safety, financial, fraud, or delivery risk.
 
@@ -580,7 +570,7 @@ Parquet is used between data layers because it provides:
 
 ### PostgreSQL
 
-PostgreSQL is used as the serving layer between Gold and Metabase.
+PostgreSQL stores the final Gold dataset (public.carrier_risk) and serves it to Metabase for dashboard queries.
 
 It provides a standard SQL interface for the BI layer and separates analytical consumption from transformation processing.
 
@@ -1045,9 +1035,7 @@ The main remaining improvements are:
 - Apply and validate Terraform against a real AWS environment if production deployment is required
 - Add production monitoring and alert integrations
 - Add CDC when operational database sources become available
-- Add end-to-end tests for Gold response matching and the final Risk Score
 - Resolve `thread_id`, cross-contact response, SMS, and chat business rules with stakeholders
-- Move carrier and broker identifiers into the final Gold model and group BI metrics by stable identifiers rather than names
 - Validate the score weights, minimum sample size, and risk-level thresholds with stakeholders
 
 The current solution intentionally distinguishes between what has actually been implemented locally and what is proposed as a production design.
