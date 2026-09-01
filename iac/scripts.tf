@@ -1,10 +1,10 @@
 resource "aws_s3_object" "bronze_script" {
   bucket = aws_s3_bucket.scripts.id
-  key    = "bronze/ingestion_pyspark.py"
-  source = "${path.module}/../src/bronze/ingestion_pyspark.py"
+  key    = "bronze/ingestion.py"
+  source = "${path.module}/../src/bronze/ingestion.py"
 
   etag = filemd5(
-    "${path.module}/../src/bronze/ingestion_pyspark.py"
+    "${path.module}/../src/bronze/ingestion.py"
   )
 }
 

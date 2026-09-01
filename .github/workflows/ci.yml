@@ -32,7 +32,7 @@ jobs:
 
       - name: Run linting
         run: |
-          python -m ruff check src/silver/data_quality.py tests
+          python -m ruff check src tests
         #   python -m ruff check src tests
 
       - name: Run tests

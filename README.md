@@ -201,7 +201,7 @@ public.carrier_risk in PostgreSQL
 
 The PostgreSQL table is written with `if_exists="replace"`, so rerunning Gold replaces the existing `public.carrier_risk` table with the newly calculated result.
 
-The notebooks use paths relative to their own folders. Run the listed notebooks from their existing locations and do not change their working directories. `src/bronze/ingestion_backlog.ipynb` is not part of the normal three-step execution flow.
+The notebooks use paths relative to their own folders. Run the listed notebooks from their existing locations and do not change their working directories.
 
 ### 7. Verify the PostgreSQL Output
 
