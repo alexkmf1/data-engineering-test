@@ -323,7 +323,9 @@ data-engineering-test/
 │   └── workflows/
 │       └── ci.yml
 ├── dashboard/
-│   └── Metabase - Carrier Risk.pdf
+│   ├── README.md
+│   ├── Metabase - Carrier Responsiveness Risk.pdf
+│   └── carrier-responsiveness-risk-dashboard.png
 ├── data/
 │   ├── bronze/
 │   ├── silver/
@@ -414,6 +416,10 @@ contact_type
 
 Including `channel` means that a response is matched within the same channel. Cross-channel responses are not treated as the same response in the current implementation.
 
+The stakeholder clarification defines `external_id` as the load identifier and `thread_id` as a thread within the communication history. The current Gold grouping does not include `thread_id`, so separate threads can be combined when all other grouping values are identical. This is a documented limitation that should be resolved before production use.
+
+The current grouping also uses `carrier_name` and `broker_name` because those are the fields exposed in Gold. A production version should retain the company IDs in Gold and use the stable IDs for grouping and joins while keeping names for display.
+
 The final Gold dataset contains:
 
 ```text
@@ -435,14 +441,134 @@ response_time
 
 ## Dashboard
 
-Metabase reads `public.carrier_risk`. The dashboard focuses on two operational questions:
+Metabase reads `public.carrier_risk`. The dashboard provides one prioritization view and two diagnostic views:
 
-1. Which carriers have the lowest response rate?
-2. When carriers respond, which have the slowest average response time?
+1. Which carriers have the highest communication-responsiveness Risk Score?
+2. Which carriers have the lowest response rate?
+3. When carriers respond, which have the slowest average response time?
 
-An exported dashboard is available at `dashboard/Metabase - Carrier Risk.pdf`.
+The dashboard setup, SQL, chart configuration, filter mapping, and screenshot are documented in `dashboard/README.md`.
 
-On a clean Metabase installation, the two questions can be recreated with the following SQL.
+The exported dashboard is available at:
+
+```text
+dashboard/Metabase - Carrier Responsiveness Risk.pdf
+```
+
+On a clean Metabase installation, the questions can be recreated with the following SQL.
+
+### Carrier Responsiveness Risk Score
+
+```sql
+WITH carrier_metrics AS (
+    SELECT
+        carrier_name,
+        COUNT(*) AS total_records,
+        COUNT(*) FILTER (WHERE responsed = TRUE) AS responded_records,
+        COUNT(*) FILTER (WHERE responsed = FALSE) AS unanswered_records,
+        COUNT(*) FILTER (WHERE responsed = TRUE)::numeric
+            / NULLIF(COUNT(*), 0) AS response_rate,
+        AVG(response_time) FILTER (
+            WHERE responsed = TRUE
+                AND response_time IS NOT NULL
+        ) / 60.0 AS avg_response_time_hours
+    FROM public.carrier_risk
+    WHERE carrier_name IS NOT NULL
+        [[AND channel = {{channel}}]]
+    GROUP BY carrier_name
+    HAVING COUNT(*) >= 10
+),
+delay_ranking AS (
+    SELECT
+        carrier_name,
+        PERCENT_RANK() OVER (
+            ORDER BY avg_response_time_hours ASC
+        ) AS delay_risk
+    FROM carrier_metrics
+    WHERE responded_records > 0
+        AND avg_response_time_hours IS NOT NULL
+),
+score_components AS (
+    SELECT
+        metrics.carrier_name,
+        metrics.total_records,
+        metrics.responded_records,
+        metrics.unanswered_records,
+        metrics.response_rate,
+        metrics.avg_response_time_hours,
+        1.0 - metrics.response_rate AS non_response_risk,
+        COALESCE(delay.delay_risk::numeric, 1.0) AS delay_risk,
+        CASE
+            WHEN metrics.responded_records = 0 THEN 1.0
+            ELSE
+                0.50 * (1.0 - metrics.response_rate)
+                + 0.50 * COALESCE(delay.delay_risk::numeric, 1.0)
+        END AS risk_score_ratio
+    FROM carrier_metrics AS metrics
+    LEFT JOIN delay_ranking AS delay
+        ON metrics.carrier_name = delay.carrier_name
+),
+scored_carriers AS (
+    SELECT
+        carrier_name,
+        total_records,
+        responded_records,
+        unanswered_records,
+        ROUND(response_rate * 100.0, 2) AS response_rate_percent,
+        ROUND(
+            avg_response_time_hours::numeric,
+            2
+        ) AS avg_response_time_hours,
+        ROUND(
+            non_response_risk * 100.0,
+            2
+        ) AS non_response_risk_percent,
+        ROUND(
+            delay_risk * 100.0,
+            2
+        ) AS delay_risk_percent,
+        ROUND(
+            risk_score_ratio * 100.0,
+            2
+        ) AS risk_score
+    FROM score_components
+)
+SELECT
+    carrier_name,
+    total_records,
+    responded_records,
+    unanswered_records,
+    response_rate_percent,
+    avg_response_time_hours,
+    non_response_risk_percent,
+    delay_risk_percent,
+    risk_score,
+    CASE
+        WHEN risk_score >= 66.67 THEN 'High'
+        WHEN risk_score >= 33.33 THEN 'Medium'
+        ELSE 'Low'
+    END AS risk_level
+FROM scored_carriers
+ORDER BY
+    risk_score DESC,
+    total_records DESC;
+```
+
+The score is intentionally explainable:
+
+```text
+Risk Score = 100 × (
+    0.50 × non-response risk
+    + 0.50 × response-delay risk
+)
+```
+
+- `non-response risk = 1 - response rate`
+- `response-delay risk` is the relative `PERCENT_RANK()` of average response time among eligible carriers
+- A carrier with no responses receives `100`, the maximum communication-responsiveness risk
+- A carrier must have at least 10 response-cycle records within the selected channel
+- The equal weights, minimum sample, and Low/Medium/High thresholds are analytical assumptions that require stakeholder validation
+- This is a communication-responsiveness score, not a safety, financial, fraud, or delivery-risk score
 
 ### Lowest Response Rate by Carrier
 
@@ -471,21 +597,30 @@ Recommended visualization: horizontal bar chart, `carrier_name` as the category,
 ```sql
 SELECT
     carrier_name,
-    COUNT(*) AS responded_records,
-    ROUND(AVG(response_time)::numeric, 2) AS avg_response_time_minutes
+    COUNT(*) FILTER (WHERE responsed = TRUE) AS responded_records,
+    ROUND(
+        (
+            AVG(response_time) FILTER (
+                WHERE responsed = TRUE
+                    AND response_time IS NOT NULL
+            )
+        )::numeric / 60.0,
+        2
+    ) AS avg_response_time_hours
 FROM public.carrier_risk
 WHERE carrier_name IS NOT NULL
-    AND responsed = TRUE
-    AND response_time IS NOT NULL
     [[AND channel = {{channel}}]]
 GROUP BY carrier_name
 HAVING COUNT(*) >= 10
-ORDER BY avg_response_time_minutes DESC;
+    AND COUNT(*) FILTER (WHERE responsed = TRUE) > 0
+ORDER BY avg_response_time_hours DESC;
 ```
 
-Recommended visualization: horizontal bar chart, `carrier_name` as the category, `avg_response_time_minutes` as the value, and `min` as the suffix.
+Recommended visualization: bar chart, `carrier_name` as the category, `avg_response_time_hours` as the value, and `hours` as the unit.
 
-The optional `channel` parameter can be used to compare email, SMS, and chat. The minimum of 10 records reduces unstable conclusions based on very small samples; it is an analytical threshold, not a confirmed business rule.
+The optional `channel` parameter is configured as a Metabase Text variable and mapped to one dashboard-level channel filter. The minimum of 10 records reduces unstable conclusions based on very small samples; it is an analytical threshold, not a confirmed business rule.
+
+The current Gold result is effectively email-only because the implemented outbound rule requires `status = delivered`. SMS primarily uses `sent`, and chat requires additional contact/status rules. Those channels should not be presented as fully supported until their business rules are implemented and validated.
 
 Metabase v0.63.15.5 is pinned in `docker-compose.yml`.
 
