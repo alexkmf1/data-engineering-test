@@ -400,15 +400,16 @@ Reusable validations are implemented in `src/silver/data_quality.py`.
 
 ```text
 Outbound:
-direction = outbound
-status = delivered
-to contact type = driver or dispatcher
+email: direction = outbound, status = delivered, to contact type = driver or dispatcher
+sms: direction = outbound, status = sent or delivered, to contact type = driver or dispatcher
+chat: direction = outbound, status = sent, to contact type = channel
 
 Inbound:
-direction = inbound
-status = received
-from contact type = driver or dispatcher
+email or sms: direction = inbound, status = received, from contact type = driver or dispatcher
+chat: direction = inbound, status = received, from contact type = other, to contact type = channel
 ```
+
+For chat, inbound and outbound events are normalized to `contact_type = channel` so that they belong to the same response-matching group. An outbound SMS event with `status = received` is excluded because it represents an event received from the provider, not a response from the carrier contact.
 
 Events are grouped using:
 
@@ -460,6 +461,14 @@ The exported dashboard is available at:
 ```text
 dashboard/Metabase - Carrier Responsiveness Risk.pdf
 ```
+
+The configured local Metabase public dashboard URL is:
+
+```text
+http://localhost:3000/public/dashboard/52693696-a936-4b0d-bfd6-bbf034a2a45d
+```
+
+Because this URL uses `localhost`, it is available only on the machine running the configured Metabase instance. The exported PDF is the portable dashboard evidence included in the repository.
 
 On a clean Metabase installation, the questions can be recreated with the following SQL.
 
@@ -557,7 +566,8 @@ SELECT
 FROM scored_carriers
 ORDER BY
     risk_score DESC,
-    total_records DESC;
+    total_records DESC
+LIMIT 20;
 ```
 
 The score is intentionally explainable:
@@ -573,6 +583,7 @@ Risk Score = 100 × (
 - `response-delay risk` is the relative `PERCENT_RANK()` of average response time among eligible carriers
 - A carrier with no responses receives `100`, the maximum communication-responsiveness risk
 - A carrier must have at least 10 response-cycle records within the selected channel
+- `PERCENT_RANK()` and the Risk Score are calculated across all eligible carriers before the final result displays the 20 highest-risk carriers
 - The equal weights, minimum sample, and Low/Medium/High thresholds are analytical assumptions that require stakeholder validation
 - This is a communication-responsiveness score, not a safety, financial, fraud, or delivery-risk score
 
@@ -624,9 +635,9 @@ ORDER BY avg_response_time_hours DESC;
 
 Visualization: bar chart, `carrier_name` as the category, `avg_response_time_hours` as the value, and `hours` as the unit.
 
-The optional `channel` parameter is configured as a Metabase Text variable and mapped to one dashboard-level channel filter. The minimum of 10 records reduces unstable conclusions based on very small samples; it is an analytical threshold, not a confirmed business rule.
+The optional `channel` parameter is configured as a Metabase Text variable and mapped to one dashboard-level channel filter. It can select `email`, `sms`, or `chat`; when no value is selected, the questions use all supported channels. The minimum of 10 records reduces unstable conclusions based on very small samples; it is an analytical threshold, not a confirmed business rule.
 
-The current Gold result is effectively email-only because the implemented outbound rule requires `status = delivered`. SMS and chat primarily uses `sent`, those channels should not be presented as fully supported until their business rules are implemented and validated.
+Gold uses channel-specific outbound rules: `delivered` for email, `sent` or `delivered` for SMS, and `sent` for chat. Chat is measured at the carrier/channel level because its contact fields identify `channel` and `other`, not an individual driver or dispatcher.
 
 Metabase v0.63.15.5 is pinned in `docker-compose.yml`.
 
