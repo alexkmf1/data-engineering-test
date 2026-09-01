@@ -1,187 +1,408 @@
 # FreightHero Carrier Profile
 
-This repository contains my implementation of the FreightHero Data Engineer Technical Assessment.
+This repository contains my implementation of the FreightHero Data Engineer Technical Assessment. It builds a local end-to-end pipeline that ingests the provided carrier, broker, and communication files, creates Bronze, Silver, and Gold datasets, loads the final Gold dataset into PostgreSQL, and exposes it to Metabase.
 
-The project builds an end-to-end data pipeline that transforms the provided carrier, broker, and communication datasets into a business-ready Gold dataset for carrier responsiveness and risk analysis.
+## Run the Project (Start Here)
 
-The local pipeline follows a Medallion-style architecture:
-
-```text
-CSV / JSON / TXT
-        ↓
-      Bronze
-        ↓
-      Silver
-        ↓
-       Gold
-        ↓
-   PostgreSQL
-        ↓
-     Metabase
-```
-
-The local implementation uses Pandas and Parquet for data processing, PostgreSQL as the SQL serving layer, and Metabase for visualization.
-
-A representative AWS production architecture using S3, AWS Glue, IAM, and Terraform is documented separately in:
+The exact local execution order is:
 
 ```text
-docs/system_design.md
+1. Prepare Python and .env
+2. Start PostgreSQL and Metabase with Docker Compose
+3. Run Bronze completely
+4. Run Silver completely
+5. Run Gold completely
+6. Verify PostgreSQL
+7. Open and configure Metabase
 ```
 
----
+The three notebooks must be run **one at a time and in this order**. Do not run them in parallel because each layer reads the output created by the previous layer.
 
-## Project Structure
+Docker Compose starts **PostgreSQL and Metabase**. The notebooks themselves run from the Python environment on the host machine.
+
+### 1. Prerequisites
+
+Install the following before running the project:
+
+- Git
+- Python 3.14 (tested with Python 3.14.2)
+- Docker Desktop with Docker Compose
+- VS Code with Python and Jupyter notebook support, or another compatible notebook environment
+
+Verify the main tools:
+
+```powershell
+python --version
+docker --version
+docker compose version
+```
+
+The following host ports must be available:
+
+| Port | Service |
+|---:|---|
+| `5432` | Docker PostgreSQL |
+| `3000` | Docker Metabase |
+
+If PostgreSQL or Metabase is already running locally on either port, stop that local service before starting Docker. On Windows, local PostgreSQL services can be listed with:
+
+```powershell
+Get-Service *postgres*
+```
+
+### 2. Open the Repository Root
+
+Run every terminal command in this section from the repository root, where `docker-compose.yml` and `requirements.txt` are located.
+
+```powershell
+cd "path\to\data-engineering-test"
+```
+
+### 3. Create the Python Environment
+
+Create and activate a virtual environment:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+Install the dependencies:
+
+```powershell
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+On macOS or Linux, activate the environment with:
+
+```bash
+source .venv/bin/activate
+```
+
+When opening a notebook in VS Code, select this `.venv` as its Python kernel. If VS Code asks to install notebook kernel support in the environment, allow it to do so.
+
+### 4. Create `.env`
+
+Copy the example configuration:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+On macOS or Linux:
+
+```bash
+cp .env.example .env
+```
+
+Review `.env` and set a local PostgreSQL password:
+
+```dotenv
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=freighthero
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your_password
+```
+
+Keep `POSTGRES_HOST=localhost`. The Gold notebook runs on the host machine and connects through Docker's published port. The real `.env` is ignored by Git and must not be committed.
+
+### 5. Start PostgreSQL and Metabase
+
+Validate the Compose file:
+
+```powershell
+docker compose config --quiet
+```
+
+Start both services in the background:
+
+```powershell
+docker compose up -d
+```
+
+The first start can take longer while Docker downloads the PostgreSQL and Metabase images.
+
+Check their status:
+
+```powershell
+docker compose ps
+```
+
+Expected state:
 
 ```text
-data-engineering-test/
-│
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-│
-├── dashboard/
-│
-├── data/
-│   ├── bronze/
-│   │   ├── brokers/
-│   │   ├── carriers/
-│   │   └── communications/
-│   │
-│   ├── silver/
-│   │   ├── brokers/
-│   │   ├── carriers/
-│   │   └── communications/
-│   │
-│   └── gold/
-│       └── carrier_risk/
-│
-├── docs/
-│   ├── carrier_risk.drawio
-│   └── system_design.md
-│
-├── iac/
-│   ├── dev.tfvars
-│   ├── int.tfvars
-│   ├── prd.tfvars
-│   ├── glue-job.tf
-│   ├── iam-policy.tf
-│   ├── iam-role.tf
-│   ├── locals.tf
-│   ├── outputs.tf
-│   ├── provider.tf
-│   ├── scripts.tf
-│   └── variables.tf
-│
-├── samples/
-│   ├── broker-samples.txt
-│   ├── carrier-samples.json
-│   └── communication-samples.csv
-│
-├── src/
-│   ├── bronze/
-│   │   └── ingestion.ipynb
-│   │
-│   ├── silver/
-│   │   ├── data_quality.py
-│   │   └── transformation.ipynb
-│   │
-│   └── gold/
-│       └── build.ipynb
-│
-├── tests/
-│   └── test_data_quality.py
-│
-├── .env.example
-├── .gitignore
-├── README.md
-└── requirements.txt
+freighthero-postgres    running (healthy)
+freighthero-metabase    running
 ```
 
-Generated Bronze, Silver, and Gold Parquet datasets are intentionally included in the repository so that the resulting data can also be reviewed without executing the pipeline.
+If PostgreSQL is still starting, wait a few seconds and run `docker compose ps` again. If a container exits, inspect it with:
 
----
+```powershell
+docker compose logs postgres --tail=100
+docker compose logs metabase --tail=100
+```
 
-## Source Data
+### 6. Run the Three Notebooks, One at a Time
 
-The assessment provides three source datasets:
+Open each notebook from its existing folder, select the `.venv` kernel, and use **Run All**. Wait for the current notebook to finish successfully before opening the next one.
 
-| Dataset | Format |
-|---|---|
-| `communication-samples.csv` | CSV |
-| `carrier-samples.json` | JSON |
-| `broker-samples.txt` | Tab-separated TXT |
+#### A. Bronze
 
----
-
-## Pipeline
-
-### Bronze
-
-Notebook:
+Run first:
 
 ```text
 src/bronze/ingestion.ipynb
 ```
 
-Bronze ingests the source files, validates the expected source structure, adds ingestion metadata, and writes the datasets as Parquet.
-
-Output:
+Bronze reads the three source files, validates their expected columns, adds ingestion metadata, and writes:
 
 ```text
-data/bronze/<dataset>/data.parquet
+data/bronze/communications/data.parquet
+data/bronze/brokers/data.parquet
+data/bronze/carriers/data.parquet
 ```
 
----
+Wait until all three datasets report that they were saved successfully.
 
-### Silver
+#### B. Silver
 
-Notebook:
+Run second:
 
 ```text
 src/silver/transformation.ipynb
 ```
 
-Silver creates the canonical datasets by standardizing columns, casting data types, normalizing timestamps, removing deterministic duplicates, and executing data-quality checks.
-
-Reusable validation functions are located in:
+Silver reads Bronze, renames and casts columns, removes deterministic duplicates, runs the configured data-quality validations, and writes:
 
 ```text
-src/silver/data_quality.py
+data/silver/communications/data.parquet
+data/silver/brokers/data.parquet
+data/silver/carriers/data.parquet
 ```
 
-Output:
+Wait until all three datasets report that they were transformed, validated, and saved successfully.
 
-```text
-data/silver/<dataset>/data.parquet
-```
+#### C. Gold
 
----
-
-### Gold
-
-Notebook:
+Run last:
 
 ```text
 src/gold/build.ipynb
 ```
 
-The Gold layer combines communications with carrier and broker information and creates response cycles used to analyze carrier responsiveness.
+Gold reads Silver, joins carrier and broker information, builds the carrier response dataset, and writes it to both:
 
-The model considers:
+```text
+data/gold/carrier_risk/data.parquet
+public.carrier_risk in PostgreSQL
+```
+
+The PostgreSQL table is written with `if_exists="replace"`, so rerunning Gold replaces the existing `public.carrier_risk` table with the newly calculated result.
+
+The notebooks use paths relative to their own folders. Run the listed notebooks from their existing locations and do not change their working directories. `src/bronze/ingestion_backlog.ipynb` is not part of the normal three-step execution flow.
+
+### 7. Verify the PostgreSQL Output
+
+With the default database and user from `.env`, run:
+
+```powershell
+docker exec freighthero-postgres psql -U postgres -d freighthero -c "SELECT COUNT(*) FROM public.carrier_risk;"
+```
+
+The query should return a row count. You can also inspect the table with pgAdmin using:
+
+```text
+Host: localhost
+Port: 5432
+Database: freighthero
+Username: postgres
+Password: the value from .env
+```
+
+### 8. Open and Configure Metabase
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+On a new Docker volume, Metabase will show its first-time setup. When adding the FreightHero PostgreSQL database, use:
+
+```text
+Display name: FreightHero
+Host: postgres
+Port: 5432
+Database: freighthero
+Username: postgres
+Password: the value from .env
+SSL: off for this local environment
+```
+
+The hostname difference is important:
+
+| Client | PostgreSQL address |
+|---|---|
+| Gold notebook on the host | `localhost:5432` |
+| pgAdmin on the host | `localhost:5432` |
+| Metabase inside Docker | `postgres:5432` |
+| Browser opening Metabase | `http://localhost:3000` |
+
+Inside the Metabase container, `localhost` means the Metabase container itself. Docker Compose provides `postgres` as the network hostname of the PostgreSQL service.
+
+If `public.carrier_risk` does not appear after Gold finishes:
+
+1. Open Metabase Admin settings.
+2. Open Databases and select `FreightHero`.
+3. Run **Sync database schema now**.
+4. Wait a few seconds and browse the `public` schema again.
+
+### 9. Stop and Restart the Environment Safely
+
+Stop the containers without deleting their data:
+
+```powershell
+docker compose down
+```
+
+Start them again later:
+
+```powershell
+docker compose up -d
+```
+
+Docker Compose uses two named volumes:
+
+```text
+postgres_data → PostgreSQL data, including public.carrier_risk
+metabase_data → Metabase settings, questions, and dashboards
+```
+
+Do **not** run `docker compose down -v` during normal use. The `-v` option deletes both named volumes, including the database table and Metabase application state. Use it only when intentionally performing a complete local reset.
+
+---
+
+## Local Architecture
+
+```text
+samples/ CSV, JSON, TXT
+          ↓
+src/bronze/ingestion.ipynb
+          ↓
+data/bronze/*.parquet
+          ↓
+src/silver/transformation.ipynb
+          ↓
+data/silver/*.parquet
+          ↓
+src/gold/build.ipynb
+          ├──────────────→ data/gold/carrier_risk/data.parquet
+          │
+          │ localhost:5432
+          ↓
+Docker PostgreSQL: public.carrier_risk
+          ↑
+          │ postgres:5432
+Docker Metabase
+          ↑
+          │ http://localhost:3000
+       Browser
+```
+
+Pandas and Parquet are used for local processing, PostgreSQL is the SQL serving layer, and Metabase is the BI layer. Docker Compose makes the serving and visualization services reproducible while named volumes preserve their local state.
+
+A representative production architecture using S3, AWS Glue, IAM, and Terraform is documented in `docs/system_design.md`.
+
+## Project Structure
+
+```text
+data-engineering-test/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+├── dashboard/
+│   └── Metabase - Carrier Risk.pdf
+├── data/
+│   ├── bronze/
+│   ├── silver/
+│   └── gold/
+│       └── carrier_risk/
+├── docs/
+│   ├── carrier_risk.drawio
+│   ├── README_original.md
+│   └── system_design.md
+├── iac/
+│   └── Terraform configuration
+├── samples/
+│   ├── broker-samples.txt
+│   ├── carrier-samples.json
+│   └── communication-samples.csv
+├── src/
+│   ├── bronze/
+│   │   └── ingestion.ipynb
+│   ├── silver/
+│   │   ├── data_quality.py
+│   │   └── transformation.ipynb
+│   └── gold/
+│       └── build.ipynb
+├── tests/
+│   └── test_data_quality.py
+├── .env.example
+├── .gitignore
+├── docker-compose.yml
+├── README.md
+└── requirements.txt
+```
+
+Generated Bronze, Silver, and Gold Parquet datasets are intentionally included so that the result can be reviewed without rerunning the pipeline.
+
+## Source Data
+
+| Dataset | Format | Purpose |
+|---|---|---|
+| `communication-samples.csv` | CSV | Communication events and response behavior |
+| `carrier-samples.json` | JSON | Carrier reference data |
+| `broker-samples.txt` | Tab-separated TXT | Broker reference data |
+
+## Pipeline Details
+
+### Bronze
+
+`src/bronze/ingestion.ipynb` preserves the source structure, validates required columns, adds `_source_file` and `_ingested_at`, and stores one Parquet dataset per source entity.
+
+### Silver
+
+`src/silver/transformation.ipynb` creates canonical datasets by:
+
+- Renaming source columns, including `broker_comany_id` to `broker_company_id`
+- Casting configured data types and timestamps
+- Removing deterministic duplicates
+- Validating uniqueness where applicable
+- Validating required values
+- Validating timestamp order
+- Adding `_transformed_at`
+
+Reusable validations are implemented in `src/silver/data_quality.py`.
+
+### Gold
+
+`src/gold/build.ipynb` joins communications with carrier and broker names and considers the following events:
 
 ```text
 Outbound:
 direction = outbound
 status = delivered
-contact type = driver or dispatcher
+to contact type = driver or dispatcher
 
 Inbound:
 direction = inbound
 status = received
-contact type = driver or dispatcher
+from contact type = driver or dispatcher
 ```
 
-Communication events are organized into conversation cycles using:
+Events are grouped using:
 
 ```text
 external_id
@@ -190,6 +411,8 @@ broker_name
 channel
 contact_type
 ```
+
+Including `channel` means that a response is matched within the same channel. Cross-channel responses are not treated as the same response in the current implementation.
 
 The final Gold dataset contains:
 
@@ -208,293 +431,119 @@ responsed
 response_time
 ```
 
-`response_time` is calculated in minutes between the first outbound communication in the cycle and the corresponding inbound response.
-
-Gold is persisted both as Parquet and in PostgreSQL.
-
-Parquet output:
-
-```text
-data/gold/carrier_risk/data.parquet
-```
-
-PostgreSQL output:
-
-```text
-public.carrier_risk
-```
-
----
-
-## Setup
-
-### Python
-
-The project was developed using:
-
-```text
-Python 3.14.2
-```
-
-Create a virtual environment:
-
-```bash
-python -m venv .venv
-```
-
-Windows PowerShell:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-Install the dependencies:
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-Current dependencies are defined in:
-
-```text
-requirements.txt
-```
-
----
-
-## PostgreSQL Configuration
-
-The local implementation uses PostgreSQL as the serving database.
-
-Tested configuration:
-
-```text
-PostgreSQL: 18.6
-
-Host: localhost
-Port: 5432
-Database: freighthero
-Schema: public
-```
-
-Create a `.env` file in the repository root using `.env.example`:
-
-```text
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=freighthero
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=your_password
-```
-
-The real `.env` file must not be committed.
-
----
-
-## Running the Pipeline
-
-The notebooks should currently be executed in the following order:
-
-```text
-1. src/bronze/ingestion.ipynb
-2. src/silver/transformation.ipynb
-3. src/gold/build.ipynb
-```
-
-Run each notebook completely before executing the next layer.
-
-The resulting flow is:
-
-```text
-Samples
-   ↓
-Bronze Parquet
-   ↓
-Silver Parquet
-   ↓
-Gold Parquet
-   ↓
-PostgreSQL
-```
-
-A future improvement would be to add a single orchestration entry point so the complete pipeline can be executed with one command.
-
----
-
-## Data Quality and Tests
-
-Runtime data-quality checks are implemented in:
-
-```text
-src/silver/data_quality.py
-```
-
-Current checks include:
-
-```text
-Duplicate removal
-Uniqueness validation
-Not-null validation
-Timestamp-order validation
-```
-
-Automated tests are implemented in:
-
-```text
-tests/test_data_quality.py
-```
-
-Run them with:
-
-```bash
-python -m pytest tests/test_data_quality.py -v
-```
-
-Current test suite:
-
-```text
-test_remove_duplicates
-test_validate_unique
-test_validate_not_null
-test_validate_timestamp_order
-```
-
-Current result:
-
-```text
-4 passed
-```
-
----
-
-## Linting
-
-Ruff is used for Python linting.
-
-Run:
-
-```bash
-python -m ruff check src tests
-```
-
----
-
-## Continuous Integration
-
-GitHub Actions configuration:
-
-```text
-.github/workflows/ci.yml
-```
-
-The CI workflow runs on pushes and pull requests and performs:
-
-```text
-Install dependencies
-        ↓
-Ruff linting
-        ↓
-Pytest
-        ↓
-Pass / Fail
-```
-
-The workflow validates the code and automated tests before changes are integrated.
-
-Runtime data-quality validation remains part of the pipeline itself.
-
----
-
-## Infrastructure as Code
-
-Representative Terraform configuration is available under:
-
-```text
-iac/
-```
-
-The Terraform files demonstrate how the production infrastructure could be organized using AWS services such as Glue and IAM, together with environment-specific configuration.
-
-The IaC is included as a design and organization example for the assessment.
-
-It has not been applied to an AWS account as part of the local implementation.
-
-Detailed infrastructure decisions are documented in:
-
-```text
-docs/system_design.md
-```
-
----
-
-## Architecture Diagram
-
-The production-oriented architecture diagram is available in Draw.io format:
-
-```text
-docs/carrier_risk.drawio
-```
-
-The diagram represents the proposed flow from external data sources through Landing, Bronze, Silver, Gold, PostgreSQL, and Metabase, together with the AWS processing and infrastructure components.
-
----
+`response_time` is measured in minutes from the first outbound communication in a group to its inbound response. Only groups with at least one outbound attempt are retained.
 
 ## Dashboard
 
-Metabase is used as the BI layer and connects to the final PostgreSQL Gold table:
+Metabase reads `public.carrier_risk`. The dashboard focuses on two operational questions:
 
-```text
-public.carrier_risk
+1. Which carriers have the lowest response rate?
+2. When carriers respond, which have the slowest average response time?
+
+An exported dashboard is available at `dashboard/Metabase - Carrier Risk.pdf`.
+
+On a clean Metabase installation, the two questions can be recreated with the following SQL.
+
+### Lowest Response Rate by Carrier
+
+```sql
+SELECT
+    carrier_name,
+    COUNT(*) AS total_records,
+    COUNT(*) FILTER (WHERE responsed = TRUE) AS responded_records,
+    ROUND(
+        100.0 * COUNT(*) FILTER (WHERE responsed = TRUE)
+        / NULLIF(COUNT(*), 0),
+        2
+    ) AS response_rate_percent
+FROM public.carrier_risk
+WHERE carrier_name IS NOT NULL
+    [[AND channel = {{channel}}]]
+GROUP BY carrier_name
+HAVING COUNT(*) >= 10
+ORDER BY response_rate_percent ASC;
 ```
 
-Tested local version:
+Recommended visualization: horizontal bar chart, `carrier_name` as the category, `response_rate_percent` as the value, and `%` as the suffix.
 
-```text
-Metabase v0.63.15.5
+### Slowest Average Response Time by Carrier
+
+```sql
+SELECT
+    carrier_name,
+    COUNT(*) AS responded_records,
+    ROUND(AVG(response_time)::numeric, 2) AS avg_response_time_minutes
+FROM public.carrier_risk
+WHERE carrier_name IS NOT NULL
+    AND responsed = TRUE
+    AND response_time IS NOT NULL
+    [[AND channel = {{channel}}]]
+GROUP BY carrier_name
+HAVING COUNT(*) >= 10
+ORDER BY avg_response_time_minutes DESC;
 ```
 
-The final dashboard and screenshots are still being completed and will be stored under:
+Recommended visualization: horizontal bar chart, `carrier_name` as the category, `avg_response_time_minutes` as the value, and `min` as the suffix.
 
-```text
-dashboard/
+The optional `channel` parameter can be used to compare email, SMS, and chat. The minimum of 10 records reduces unstable conclusions based on very small samples; it is an analytical threshold, not a confirmed business rule.
+
+Metabase v0.63.15.5 is pinned in `docker-compose.yml`.
+
+## Data Quality and Tests
+
+Runtime data-quality checks are implemented in `src/silver/data_quality.py`. Automated tests are in `tests/test_data_quality.py`.
+
+Run the tests from the repository root:
+
+```powershell
+python -m pytest tests/test_data_quality.py -v
 ```
 
----
+The test suite covers:
 
-## System Design
+- Duplicate removal
+- Uniqueness validation
+- Not-null validation
+- Timestamp-order validation
 
-Detailed architecture and engineering decisions are intentionally kept outside this README.
+## Linting
 
-See:
+Ruff is used for Python linting:
 
-```text
-docs/system_design.md
+```powershell
+python -m ruff check src/silver/data_quality.py tests
 ```
 
-The system design document covers topics such as:
+## Continuous Integration
 
-- Local and production architecture
-- Data modeling
-- Schema management and schema evolution
+`.github/workflows/ci.yml` runs the same targeted lint command and the data-quality tests on pushes and pull requests. Runtime data-quality validation remains part of the Silver pipeline.
+
+## Infrastructure as Code
+
+Representative Terraform configuration is available under `iac/`. It demonstrates how AWS Glue and IAM resources could be organized with environment-specific configuration.
+
+The Terraform configuration is a design example for the assessment and has not been applied to an AWS account. Detailed decisions are documented in `docs/system_design.md`.
+
+## Architecture Diagram and System Design
+
+The production-oriented Draw.io diagram is available at `docs/carrier_risk.drawio`.
+
+`docs/system_design.md` covers:
+
+- Local and proposed production architecture
+- Data modeling and schema evolution
 - Data quality and failure handling
 - CDC and incremental processing
 - Governance and metadata
 - Infrastructure as Code
 - Security and access
-- Scaling
-- Production monitoring
-- Environment strategy
+- Scaling, monitoring, and environment strategy
 
-This README focuses primarily on how to understand, install, run, and validate the project.
+## Current Limitations and Future Improvements
 
----
-
-## Future Improvements
-
-The following improvements can be added beyond the current implementation:
-
-- Docker Compose for the pipeline, PostgreSQL, and Metabase
-- Single-command pipeline orchestration
-- Production deployment and validation of the Terraform infrastructure
-
----
+- The pipeline notebooks are executed manually; add a single orchestration entry point.
+- Package notebook logic as executable Python or PySpark jobs for production deployment.
+- Automate Metabase question and dashboard provisioning for a completely clean environment.
+- Apply and validate the Terraform configuration in a real AWS environment.
+- Add incremental ingestion or CDC when operational database sources are available.
+- Confirm communication and response-matching assumptions with business stakeholders.
