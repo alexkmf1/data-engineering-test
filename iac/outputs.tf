@@ -20,3 +20,17 @@ output "glue_jobs" {
     layer => job.name
   }
 }
+
+output "scripts_bucket" {
+  description = "S3 bucket that receives packaged Glue scripts"
+  value       = aws_s3_bucket.scripts.bucket
+}
+
+output "glue_script_locations" {
+  description = "Expected S3 locations for packaged Python/PySpark scripts"
+
+  value = {
+    for layer, key in local.glue_script_keys :
+    layer => "s3://${aws_s3_bucket.scripts.bucket}/${key}"
+  }
+}

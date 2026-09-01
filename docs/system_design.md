@@ -58,6 +58,8 @@ src/gold/build.ipynb
 
 The generated Bronze, Silver, and Gold datasets are also committed to the repository so that the resulting data can be inspected even if the evaluator does not execute the complete environment locally.
 
+PostgreSQL and Metabase run as Docker Compose services. The notebooks run in the host Python environment and connect to PostgreSQL through `localhost:5432`; Metabase connects from inside the Docker network through `postgres:5432`. Named volumes preserve the PostgreSQL data and Metabase configuration between container restarts.
+
 ### Proposed Production Architecture
 
 The production reference architecture uses AWS:
@@ -279,9 +281,9 @@ from_contact_type = driver or dispatcher
 
 The source contact becomes the analytical `contact_type`.
 
-### Conversation Definition
+### Response-Matching Group
 
-For this assessment, a conversation is identified using:
+The stakeholder clarification defines `external_id` as the load identifier shared by related communications. The current implementation creates a response-matching group using:
 
 ```text
 external_id
@@ -291,7 +293,9 @@ channel
 contact_type
 ```
 
-Events are sorted chronologically within these groups.
+Events are sorted chronologically within these groups. The same `channel` and `contact_type` are required for the outbound attempt and inbound response.
+
+`thread_id` is not currently included in the grouping key. Because a load can contain multiple threads, this is a known limitation: communications from separate threads could be combined when the other grouping fields are identical. A production version should confirm the desired thread behavior and either include `thread_id` or implement an explicit fallback for null thread identifiers.
 
 ### Response Cycles
 
@@ -343,7 +347,7 @@ The current Gold dataset contains:
 
 | Column | Description |
 |---|---|
-| `external_id` | Source external conversation identifier |
+| `external_id` | Load identifier shared by related communications |
 | `carrier_name` | Carrier associated with the communication |
 | `broker_name` | Broker associated with the communication |
 | `channel` | Communication channel |
@@ -358,24 +362,62 @@ The current Gold dataset contains:
 
 ### Business Assumptions
 
-The source files do not provide a complete business data dictionary.
+The source files do not provide a complete business data dictionary. Stakeholder clarification resolved some semantics, while other implementation choices remain analytical assumptions.
 
 Therefore, the response logic is based on explicit assumptions documented in the implementation.
 
-In a production environment, these rules should be confirmed with the business stakeholder, especially:
+Confirmed for the current assessment:
 
-- Meaning of `external_id`
-- Meaning of `thread_id`
-- Exact perspective of `direction`
-- Whether a response through another channel should count
-- Whether different contact types can respond to the same conversation
-- Which communication statuses represent valid communication attempts
+- Each row is one communication event.
+- `external_id` is the load identifier shared by the related communications.
+- `direction = outbound` means FreightHero sent the communication.
+- `direction = inbound` means FreightHero received the communication.
+- Responses remain within the same `channel`; cross-channel response matching is not required today.
+- `thread_id` represents a thread within the broader communication history.
+
+The remaining rules that require business validation are:
+
+- Whether `thread_id` must always participate in response matching and how null thread identifiers should behave.
+- Whether a driver can answer a message sent to a dispatcher, or vice versa.
+- Whether `created_at` or another event timestamp should be used for the response-time clock.
+- Which outbound statuses count as valid attempts for SMS and chat.
+- Whether equal score weights and the minimum of 10 records should become formal business rules.
 
 Documenting these assumptions avoids silently embedding uncertain business rules into the analytical model.
 
-The current Gold implementation produces response-level metrics used for carrier risk analysis.
+The current Gold implementation produces response-cycle metrics used for carrier risk analysis. Because the implemented outbound rule requires `status = delivered`, the current Gold output is effectively email-only. SMS primarily uses `sent`, and chat requires additional status/contact rules before those channels can be treated as supported.
 
-A future business extension could aggregate these response-cycle measures into an additional weighted numerical score per carrier if a specific Carrier Risk Score formula is defined by the stakeholder.
+### Carrier Responsiveness Risk Score
+
+The final Risk Score is calculated in the Metabase SQL layer from `public.carrier_risk`. The complete query is versioned in `README.md` and `dashboard/README.md`.
+
+For every carrier with at least 10 response-cycle records within the selected channel:
+
+```text
+response_rate = responded records / total records
+
+non_response_risk = 1 - response_rate
+
+delay_risk = PERCENT_RANK of average response time
+             relative to the other eligible carriers
+
+Risk Score = 100 × (
+    0.50 × non_response_risk
+    + 0.50 × delay_risk
+)
+```
+
+Average response time uses answered cycles only and is displayed in hours. If a carrier has no responses, its Risk Score is set to `100`, representing maximum communication-responsiveness risk.
+
+The final score is classified for presentation purposes as:
+
+```text
+High   >= 66.67
+Medium >= 33.33 and < 66.67
+Low    < 33.33
+```
+
+The score is explainable but relative: `PERCENT_RANK()` depends on the eligible carrier population and selected channel. The 50/50 weighting, the minimum sample of 10 records, and the risk-level thresholds are analytical assumptions pending stakeholder approval. The result measures communication responsiveness only; it does not represent carrier safety, financial, fraud, or delivery risk.
 
 ---
 
@@ -550,7 +592,7 @@ Metabase is used as the visualization layer and connects to:
 public.carrier_risk
 ```
 
-The final dashboard is still being completed.
+The final dashboard contains three cards: Carrier Responsiveness Risk Score, Response Rate by Carrier, and Average Response Time by Carrier. It includes a shared `channel` filter and is exported under `dashboard/` together with its SQL and configuration documentation.
 
 ### PySpark / AWS Glue
 
@@ -998,12 +1040,14 @@ Instead, the local implementation demonstrates the transformation logic while th
 
 The main remaining improvements are:
 
-- Add Docker Compose for reproducible local execution
 - Add a single-command local pipeline runner
 - Package notebook logic as production Python/PySpark scripts if deploying through AWS Glue
 - Apply and validate Terraform against a real AWS environment if production deployment is required
 - Add production monitoring and alert integrations
 - Add CDC when operational database sources become available
-- Confirm communication semantics and response rules with business stakeholders
+- Add end-to-end tests for Gold response matching and the final Risk Score
+- Resolve `thread_id`, cross-contact response, SMS, and chat business rules with stakeholders
+- Move carrier and broker identifiers into the final Gold model and group BI metrics by stable identifiers rather than names
+- Validate the score weights, minimum sample size, and risk-level thresholds with stakeholders
 
 The current solution intentionally distinguishes between what has actually been implemented locally and what is proposed as a production design.
