@@ -6,7 +6,7 @@ locals {
       script_location = format(
         "s3://%s/%s",
         aws_s3_bucket.scripts.bucket,
-        aws_s3_object.bronze_script.key
+        local.glue_script_keys.bronze
       )
 
       source_path = "s3://${aws_s3_bucket.data["landing"].bucket}/"
@@ -19,7 +19,7 @@ locals {
       script_location = format(
         "s3://%s/%s",
         aws_s3_bucket.scripts.bucket,
-        aws_s3_object.silver_script.key
+        local.glue_script_keys.silver
       )
 
       source_path = "s3://${aws_s3_bucket.data["bronze"].bucket}/"
@@ -32,7 +32,7 @@ locals {
       script_location = format(
         "s3://%s/%s",
         aws_s3_bucket.scripts.bucket,
-        aws_s3_object.gold_script.key
+        local.glue_script_keys.gold
       )
 
       source_path = "s3://${aws_s3_bucket.data["silver"].bucket}/"
@@ -48,16 +48,16 @@ resource "aws_glue_job" "pipeline" {
   description = each.value.description
   role_arn    = aws_iam_role.glue_execution.arn
 
-  job_mode       = "SCRIPT"
-  glue_version   = "5.1"
-  worker_type    = "G.1X"
+  job_mode          = "SCRIPT"
+  glue_version      = var.glue_version
+  worker_type       = var.glue_worker_type
   number_of_workers = 2
 
   max_retries = 1
   timeout     = 30
 
-  execution_class          = "STANDARD"
-  job_run_queuing_enabled  = true
+  execution_class         = "STANDARD"
+  job_run_queuing_enabled = true
 
   execution_property {
     max_concurrent_runs = 1
@@ -70,15 +70,15 @@ resource "aws_glue_job" "pipeline" {
   }
 
   default_arguments = {
-    "--job-language"                    = "python"
-    "--environment"                     = var.environment
-    "--source_path"                     = each.value.source_path
-    "--target_path"                     = each.value.target_path
-    "--TempDir"                         = "s3://${aws_s3_bucket.data["landing"].bucket}/glue-temp/${each.key}/"
-    "--job-bookmark-option"             = "job-bookmark-disable"
+    "--job-language"                     = "python"
+    "--environment"                      = var.environment
+    "--source_path"                      = each.value.source_path
+    "--target_path"                      = each.value.target_path
+    "--TempDir"                          = "s3://${aws_s3_bucket.data["landing"].bucket}/glue-temp/${each.key}/"
+    "--job-bookmark-option"              = "job-bookmark-disable"
     "--enable-continuous-cloudwatch-log" = "true"
-    "--enable-observability-metrics"    = "true"
-    "--enable-metrics"                  = ""
+    "--enable-observability-metrics"     = "true"
+    "--enable-metrics"                   = ""
   }
 
   tags = merge(

@@ -1,29 +1,10 @@
-resource "aws_s3_object" "bronze_script" {
-  bucket = aws_s3_bucket.scripts.id
-  key    = "bronze/ingestion.ipynb"
-  source = "${path.module}/../src/bronze/ingestion.ipynb"
-
-  etag = filemd5(
-    "${path.module}/../src/bronze/ingestion.ipynb"
-  )
-}
-
-resource "aws_s3_object" "silver_script" {
-  bucket = aws_s3_bucket.scripts.id
-  key    = "silver/transformation.ipynb"
-  source = "${path.module}/../src/silver/transformation.ipynb"
-
-  etag = filemd5(
-    "${path.module}/../src/silver/transformation.ipynb"
-  )
-}
-
-resource "aws_s3_object" "gold_script" {
-  bucket = aws_s3_bucket.scripts.id
-  key    = "gold/build.ipynb"
-  source = "${path.module}/../src/gold/build.ipynb"
-
-  etag = filemd5(
-    "${path.module}/../src/gold/build.ipynb"
-  )
+# The implemented local pipeline remains notebook-based. Before a real Glue
+# deployment, CI/CD would package that logic as executable Python/PySpark files
+# and publish the files below to the scripts bucket.
+locals {
+  glue_script_keys = {
+    bronze = "bronze/ingestion.py"
+    silver = "silver/transformation.py"
+    gold   = "gold/build.py"
+  }
 }
